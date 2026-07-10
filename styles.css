@@ -268,3 +268,10 @@ body.step-6 .scene--explore {
     max-width: 420px;
   }
 }
+
+.hero__student {
+  margin: -.7rem 0 1rem;
+  color: rgba(245,245,240,.62);
+  font-size: .78rem;
+  letter-spacing: .08em;
+}
