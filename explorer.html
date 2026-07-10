@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stuttgart Heat Explorer</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body class="explorer-body">
+  <header class="topbar">
+    <a href="index.html">← Story</a>
+    <strong>Stuttgart Heat Explorer</strong>
+    <button id="methodBtn">Methodik</button>
+  </header>
+
+  <aside class="control-panel">
+    <h1>Heat Explorer</h1>
+    <p>Wähle Zeitraum und Layer. Fahre über eine Rasterzelle, um Werte zu sehen.</p>
+
+    <label>Monat
+      <select id="monthSelect">
+        <option value="june">Juni</option>
+        <option value="july" selected>Juli</option>
+        <option value="august">August</option>
+      </select>
+    </label>
+
+    <label>Tageszeit
+      <select id="timeSelect">
+        <option value="6">06:00</option>
+        <option value="12">12:00</option>
+        <option value="15" selected>15:00</option>
+        <option value="18">18:00</option>
+        <option value="22">22:00</option>
+      </select>
+    </label>
+
+    <label>Layer
+      <select id="layerSelect">
+        <option value="heat" selected>Hitze</option>
+        <option value="green">Grünindex</option>
+        <option value="sealed">Versiegelung</option>
+      </select>
+    </label>
+
+    <div class="legend">
+      <span>niedrig</span>
+      <div class="gradient"></div>
+      <span>hoch</span>
+    </div>
+
+    <div id="infoCard" class="info-card">
+      <p class="muted">Noch keine Zelle ausgewählt.</p>
+    </div>
+  </aside>
+
+  <div id="explorerMap"></div>
+
+  <dialog id="methodDialog">
+    <h2>Methodik-Prototyp</h2>
+    <p>Diese Version nutzt Platzhalterdaten in einem 500-m-Raster. Die spätere Projektversion ersetzt diese Werte durch aggregierte Geodaten: Landsat-Landoberflächentemperatur, NDVI/Vegetation, Versiegelung und Stadtklimadaten.</p>
+    <p>Monat und Tageszeit werden als modellierte Anpassung verstanden, nicht als Echtzeitmessung.</p>
+    <button id="closeMethod">Schließen</button>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="explorer.js"></script>
+</body>
+</html>
