@@ -1,0 +1,153 @@
+
+.resolution-note {
+  margin: .8rem 0;
+  padding: .65rem .8rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,.08);
+  color: #d6cdc2;
+  font-size: .82rem;
+}
+
+.term-tip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.2);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: help;
+  outline: none;
+}
+
+.term-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 9999;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  width: 245px;
+  padding: .75rem .85rem;
+  border-radius: 12px;
+  background: #090b09;
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 450;
+  line-height: 1.42;
+  box-shadow: 0 12px 35px rgba(0,0,0,.45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 6px);
+  transition: .16s ease;
+}
+
+.term-tip:hover::after,
+.term-tip:focus::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.quality-note {
+  margin-top: .75rem;
+  padding: .65rem .75rem;
+  border-left: 3px solid #f0b34b;
+  border-radius: 8px;
+  background: rgba(240,179,75,.1);
+  color: #f3d7a4 !important;
+  font-size: .8rem;
+}
+
+@media (max-width: 760px) {
+  .term-tip::after {
+    left: auto;
+    right: -20px;
+    transform: translateY(6px);
+  }
+
+  .term-tip:hover::after,
+  .term-tip:focus::after {
+    transform: translateY(0);
+  }
+}
+
+
+.cause-card,
+.compare-card {
+  margin-top: 1rem;
+  padding: .9rem;
+  border-radius: 15px;
+  background: rgba(0,0,0,.22);
+}
+
+.cause-card h3,
+.compare-card h3 {
+  margin: 0 0 .75rem;
+  font-size: 1rem;
+}
+
+.cause-item {
+  display: grid;
+  gap: .2rem;
+  margin: .7rem 0;
+}
+
+.cause-item strong {
+  font-size: .87rem;
+}
+
+.cause-item span,
+.cause-caveat {
+  color: #d6cdc2;
+  font-size: .79rem;
+  line-height: 1.4;
+}
+
+.cause-caveat {
+  margin: .85rem 0 0;
+  padding-top: .7rem;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+
+.compare-actions {
+  margin-top: .9rem;
+}
+
+.compare-button,
+.secondary-button {
+  width: 100%;
+  padding: .72rem .85rem;
+  border: 0;
+  border-radius: 12px;
+  background: #f36d21;
+  color: #fff;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.secondary-button {
+  margin-top: .7rem;
+  background: rgba(255,255,255,.12);
+}
+
+.compare-status {
+  margin: 0;
+  color: #f2c098 !important;
+  font-size: .82rem;
+}
+
+.compare-table {
+  display: grid;
+  grid-template-columns: 1.3fr .8fr .8fr;
+  gap: .45rem .55rem;
+  align-items: center;
+  font-size: .76rem;
+}
+
+.compare-table > * {
+  padding: .35rem 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}

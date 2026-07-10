@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Stuttgart Heat Explorer</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles-v5-additions.css">
+</head>
+<body class="explorer-body">
+<header class="topbar">
+  <a href="index.html">← Story</a>
+  <strong>Stuttgart Heat Explorer</strong>
+  <button id="methodBtn">Methodik</button>
+</header>
+
+<aside class="control-panel">
+  <h1>Heat Explorer</h1>
+  <p>Erkunde reale Landsat-Daten: stadtweit im 250-m-Raster und bei Bezirksauswahl detailliert im 125-m-Raster.</p>
+
+  <label>Zeitraum
+    <select id="periodSelect">
+      <option value="18">2016–2020</option>
+      <option value="06">2004–2008</option>
+      <option value="change">Veränderung</option>
+    </select>
+  </label>
+
+  <label>Parameter
+    <select id="layerSelect">
+      <option value="heat">Heat Score</option>
+      <option value="lst">Oberflächentemperatur</option>
+      <option value="uhi">Hitzeinsel-Effekt</option>
+      <option value="green">Vegetation / NDVI</option>
+    </select>
+  </label>
+
+  <label>Stadtbezirk
+    <select id="districtSelect">
+      <option value="">Gesamtes Stadtgebiet</option>
+    </select>
+  </label>
+
+  <label>Kartenansicht
+    <select id="basemapSelect">
+      <option value="map">Stadtplan</option>
+      <option value="satellite">Satellitenansicht</option>
+    </select>
+  </label>
+
+  <div id="resolutionNote" class="resolution-note">Auflösung: 250 × 250 m</div>
+
+  <div class="legend">
+    <span id="legendLow">niedrig</span>
+    <div class="gradient" id="legendGradient"></div>
+    <span id="legendHigh">hoch</span>
+  </div>
+
+  <div id="districtCard" class="info-card">
+    <p class="muted">Wähle einen Stadtbezirk oder fahre über eine Rasterzelle.</p>
+  </div>
+
+  <div id="infoCard" class="info-card">
+    <p class="muted">Noch keine Rasterzelle ausgewählt.</p>
+  </div>
+</aside>
+
+<div id="explorerMap"></div>
+
+<dialog id="methodDialog">
+  <h2>Methodik</h2>
+  <p>Amtliche Gemeinde- und Stadtbezirksgrenzen stammen aus der Kleinräumigen Gliederung der Landeshauptstadt Stuttgart.</p>
+  <p>Landoberflächentemperatur, Urban-Heat-Island-Wert und NDVI basieren auf Landsat-Mittelwerten für 2004–2008 und 2016–2020. Beide Zeiträume nutzen identische Skalen, damit ein direkter Vergleich möglich ist.</p>
+  <p>Der Heat Score kombiniert 55 % normalisierte Landoberflächentemperatur, 30 % normalisierten UHI-Wert und 15 % Vegetationsdefizit. Er wird im Veränderungsmodus bewusst nicht angezeigt.</p>
+  <p>Kleine Datenlücken wurden durch eine räumliche, invers distanzgewichtete Interpolation benachbarter Zellen geschlossen. Solche Zellen werden in der Detailansicht als interpoliert gekennzeichnet.</p>
+  <p>Die Satellitenansicht dient der räumlichen Orientierung; sie verändert die dargestellten Daten nicht.</p>
+  <button id="closeMethod">Schließen</button>
+</dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="explorer-v5.js"></script>
+</body>
+</html>
