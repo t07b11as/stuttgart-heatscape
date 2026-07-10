@@ -1,0 +1,62 @@
+[
+  {
+    "district": "Zuffenhausen",
+    "file": "data/districts/zuffenhausen.geojson",
+    "cells": 808,
+    "interpolated_cells": 23
+  },
+  {
+    "district": "Süd",
+    "file": "data/districts/sued.geojson",
+    "cells": 659,
+    "interpolated_cells": 11
+  },
+  {
+    "district": "West",
+    "file": "data/districts/west.geojson",
+    "cells": 1263,
+    "interpolated_cells": 286
+  },
+  {
+    "district": "Bad Cannstatt",
+    "file": "data/districts/bad-cannstatt.geojson",
+    "cells": 1051,
+    "interpolated_cells": 13
+  },
+  {
+    "district": "Mitte",
+    "file": "data/districts/mitte.geojson",
+    "cells": 262,
+    "interpolated_cells": 0
+  },
+  {
+    "district": "Untertürkheim",
+    "file": "data/districts/untertuerkheim.geojson",
+    "cells": 423,
+    "interpolated_cells": 0
+  },
+  {
+    "district": "Feuerbach",
+    "file": "data/districts/feuerbach.geojson",
+    "cells": 778,
+    "interpolated_cells": 49
+  },
+  {
+    "district": "Vaihingen",
+    "file": "data/districts/vaihingen.geojson",
+    "cells": 1392,
+    "interpolated_cells": 294
+  },
+  {
+    "district": "Ost",
+    "file": "data/districts/ost.geojson",
+    "cells": 610,
+    "interpolated_cells": 0
+  },
+  {
+    "district": "Degerloch",
+    "file": "data/districts/degerloch.geojson",
+    "cells": 550,
+    "interpolated_cells": 0
+  }
+]
