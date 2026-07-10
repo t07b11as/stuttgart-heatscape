@@ -1,0 +1,616 @@
+const map = L.map('explorerMap', { zoomControl: false }).setView([48.7758, 9.1829], 11);
+
+const streetLayer = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  {
+    maxZoom: 19,
+    opacity: .94,
+    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }
+).addTo(map);
+
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {
+    maxZoom: 19,
+    opacity: .92,
+    attribution: 'Tiles &copy; Esri'
+  }
+);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+let period = '18';
+let layerName = 'heat';
+let activeDistrict = '';
+let cityData = null;
+let summaries = [];
+let manifest = [];
+let cityGridLayer = null;
+let districtGridLayer = null;
+let borderLayer = null;
+let lastActiveProps = null;
+let comparisonA = null;
+let comparisonB = null;
+let pinnedProps = null;
+let pinnedLayer = null;
+
+const periodSelect = document.getElementById('periodSelect');
+const layerSelect = document.getElementById('layerSelect');
+const districtSelect = document.getElementById('districtSelect');
+const basemapSelect = document.getElementById('basemapSelect');
+const resolutionNote = document.getElementById('resolutionNote');
+const districtCard = document.getElementById('districtCard');
+const infoCard = document.getElementById('infoCard');
+const legendLow = document.getElementById('legendLow');
+const legendHigh = document.getElementById('legendHigh');
+const legendGradient = document.getElementById('legendGradient');
+
+const districtNames = [
+  'Bad Cannstatt', 'Degerloch', 'Feuerbach', 'Mitte', 'Nord', 'Ost',
+  'Süd', 'Untertürkheim', 'Vaihingen', 'West', 'Zuffenhausen'
+];
+districtNames.forEach(name => districtSelect.add(new Option(name, name)));
+
+const definitions = {
+  heat: 'Projektbezogener Vergleichsindex aus Landoberflächentemperatur, Wärmeinsel-Effekt und Vegetationsdefizit. Er ist keine gemessene Luft- oder gefühlte Temperatur.',
+  lst: 'Die Landoberflächentemperatur beschreibt, wie warm die Erdoberfläche ist. Asphalt, Dächer oder Rasen können deutlich wärmer oder kühler als die Luft sein.',
+  uhi: 'Eine städtische Hitzeinsel ist ein Gebiet, das sich gegenüber dem ländlichen Referenzraum stärker erwärmt – etwa durch Versiegelung, dichte Bebauung und wenig Vegetation.',
+  ndvi: 'Der NDVI ist ein aus Satellitendaten berechneter Vegetationsindex. Höhere Werte weisen auf dichtere oder vitalere Vegetation hin.'
+};
+
+const domains = {
+  heat: [0, 100],
+  lst: [25, 50],
+  uhi: [-8, 16],
+  green: [0.00, 0.55],
+  lst_change: [-5, 5],
+  uhi_change: [-5, 5],
+  green_change: [-0.15, 0.15]
+};
+
+function hexToRgb(hex) {
+  const value = hex.replace('#', '');
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return '#' + [r, g, b]
+    .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function interpolateColor(a, b, t) {
+  const c1 = hexToRgb(a);
+  const c2 = hexToRgb(b);
+  return rgbToHex({
+    r: c1.r + (c2.r - c1.r) * t,
+    g: c1.g + (c2.g - c1.g) * t,
+    b: c1.b + (c2.b - c1.b) * t
+  });
+}
+
+function rampColor(t, stops) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const scaled = clamped * (stops.length - 1);
+  const index = Math.min(stops.length - 2, Math.floor(scaled));
+  return interpolateColor(stops[index], stops[index + 1], scaled - index);
+}
+
+function selectedField() {
+  if (period === 'change') {
+    if (layerName === 'green') return 'ndvi_change';
+    return `${layerName}_change`;
+  }
+  if (layerName === 'green') return `ndvi_${period}`;
+  return `${layerName}_${period}`;
+}
+
+function selectedValue(props) {
+  const value = Number(props[selectedField()]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function normalizedValue(props) {
+  const value = selectedValue(props);
+  if (value === null) return 0.5;
+
+  let key = layerName;
+  if (period === 'change') key = `${layerName}_change`;
+
+  const [min, max] = domains[key];
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function fillColor(props) {
+  const t = normalizedValue(props);
+
+  if (period === 'change') {
+    if (layerName === 'uhi') return rampColor(t, ['#6f6258', '#b7aa9d', '#f4f1ea', '#e88a45', '#8f2d16']);
+    if (layerName === 'green') return rampColor(t, ['#5b0000', '#b11212', '#f2e8d5', '#4caf50', '#005a24']);
+    return rampColor(t, ['#1e5aa8', '#7fb8e8', '#f4f1ea', '#f08a74', '#a41414']);
+  }
+
+  if (layerName === 'green') {
+    return rampColor(t, ['#4a0000', '#a41414', '#d9b44a', '#39a844', '#004d1f']);
+  }
+
+  return rampColor(t, ['#176b54', '#f0d84f', '#f08a24', '#e53920', '#7f0000']);
+}
+
+function featureStyle(feature) {
+  return {
+    color: 'rgba(255,255,255,.22)',
+    weight: activeDistrict ? .4 : .55,
+    fillColor: fillColor(feature.properties),
+    fillOpacity: basemapSelect.value === 'satellite' ? .64 : .78
+  };
+}
+
+function classification(value) {
+  if (value >= 67) return 'eine hohe';
+  if (value >= 34) return 'eine mittlere';
+  return 'eine geringe';
+}
+
+function tooltip(term, key) {
+  return `${term}<span class="term-tip" tabindex="0" data-tip="${definitions[key]}">?</span>`;
+}
+
+function explanation(props) {
+  const value = selectedValue(props);
+
+  if (period === 'change') {
+    const direction = value > 0 ? 'zugenommen' : value < 0 ? 'abgenommen' : 'sich kaum verändert';
+    if (layerName === 'lst') {
+      return `Die mittlere Landoberflächentemperatur hat ${direction} (${value > 0 ? '+' : ''}${value.toFixed(1)} °C).`;
+    }
+    if (layerName === 'uhi') {
+      const lstChange = Number(props.lst_change);
+      const uhiDirection = value > 0 ? 'größer geworden' : value < 0 ? 'kleiner geworden' : 'nahezu unverändert geblieben';
+      return `Der Temperaturunterschied zum ländlichen Referenzraum ist ${uhiDirection} (${value > 0 ? '+' : ''}${value.toFixed(1)} °C). Das bedeutet nicht, dass sich diese Fläche abgekühlt hat. Die Landoberflächentemperatur hat im selben Zeitraum ${lstChange > 0 ? 'um ' + lstChange.toFixed(1) + ' °C zugenommen' : lstChange < 0 ? 'um ' + Math.abs(lstChange).toFixed(1) + ' °C abgenommen' : 'kaum verändert'}.`;
+    }
+    return `Der mittlere NDVI-Wert hat ${direction} (${value > 0 ? '+' : ''}${value.toFixed(3)}).`;
+  }
+
+  if (layerName === 'heat') {
+    return `Diese Zelle weist ${classification(value)} thermische Belastung im stadtweiten Vergleich auf.`;
+  }
+  if (layerName === 'lst') {
+    return `Die mittlere Landoberflächentemperatur beträgt ${value.toFixed(1)} °C. Sie ist nicht mit Luft- oder gefühlter Temperatur gleichzusetzen.`;
+  }
+  if (layerName === 'uhi') {
+    return `Der Hitzeinsel-Wert beträgt ${value.toFixed(1)} °C. Positive Werte zeigen eine stärkere Erwärmung gegenüber dem ländlichen Referenzraum.`;
+  }
+  return `Der NDVI beträgt ${value.toFixed(3)}. Höhere Werte stehen für stärkere Vegetationsausprägung.`;
+}
+
+
+function causeLevel(value, low, high, labels) {
+  if (value >= high) return labels[2];
+  if (value >= low) return labels[1];
+  return labels[0];
+}
+
+function reasonsFor(props) {
+  const displayPeriod = period === 'change' ? '18' : period;
+  const lst = Number(props[`lst_${displayPeriod}`]);
+  const uhi = Number(props[`uhi_${displayPeriod}`]);
+  const ndvi = Number(props[`ndvi_${displayPeriod}`]);
+
+  const surfaceLevel = causeLevel(lst, 34, 39, ['geringe', 'mittlere', 'starke']);
+  const vegetationLevel = causeLevel(ndvi, .18, .30, ['wenig', 'mittlere', 'viel']);
+  const uhiLevel = causeLevel(uhi, 1.5, 5, ['geringer', 'mittlerer', 'ausgeprägter']);
+
+  const surfaceText =
+    surfaceLevel === 'starke'
+      ? 'Die Oberfläche gehört zu den stärker erwärmten Flächen Stuttgarts.'
+      : surfaceLevel === 'mittlere'
+        ? 'Die Oberfläche erwärmt sich im stadtweiten Vergleich durchschnittlich.'
+        : 'Die Oberfläche bleibt im stadtweiten Vergleich eher kühl.';
+
+  const vegetationText =
+    vegetationLevel === 'wenig'
+      ? 'Der niedrige NDVI weist auf wenig Vegetation und damit geringeres Kühlungspotenzial durch Schatten und Verdunstung hin.'
+      : vegetationLevel === 'mittlere'
+        ? 'Der NDVI zeigt eine mittlere Vegetationsausprägung mit begrenztem Kühlungspotenzial.'
+        : 'Der hohe NDVI weist auf viel Vegetation und damit stärkeres Kühlungspotenzial hin.';
+
+  const uhiText =
+    uhiLevel === 'ausgeprägter'
+      ? 'Der deutliche Stadt-Umland-Unterschied spricht für einen ausgeprägten Wärmeinseleffekt.'
+      : uhiLevel === 'mittlerer'
+        ? 'Der Stadt-Umland-Unterschied ist erkennbar, aber nicht extrem ausgeprägt.'
+        : 'Der Stadt-Umland-Unterschied ist vergleichsweise gering.';
+
+  return `
+    <div class="cause-card">
+      <h3>Warum ist es hier warm?</h3>
+      <div class="cause-item"><strong>🌡 ${surfaceLevel[0].toUpperCase() + surfaceLevel.slice(1)} Oberflächenerwärmung</strong><span>${surfaceText}</span></div>
+      <div class="cause-item"><strong>🌿 ${vegetationLevel[0].toUpperCase() + vegetationLevel.slice(1)} Vegetation</strong><span>${vegetationText}</span></div>
+      <div class="cause-item"><strong>🏙 ${uhiLevel[0].toUpperCase() + uhiLevel.slice(1)} Hitzeinsel-Effekt</strong><span>${uhiText}</span></div>
+      <p class="cause-caveat">Versiegelung und Bebauungsstruktur können die Wärmespeicherung zusätzlich beeinflussen, werden im Prototyp jedoch nicht als eigener Messwert ausgewiesen.</p>
+    </div>
+  `;
+}
+
+function comparisonValue(props, field, digits = 1) {
+  const value = Number(props[field]);
+  return Number.isFinite(value) ? value.toFixed(digits) : '–';
+}
+
+function comparisonSummary(a, b) {
+  const displayPeriod = period === 'change' ? '18' : period;
+  const lstDiff = Number(a[`lst_${displayPeriod}`]) - Number(b[`lst_${displayPeriod}`]);
+  const ndviDiff = Number(a[`ndvi_${displayPeriod}`]) - Number(b[`ndvi_${displayPeriod}`]);
+  const warmer = lstDiff >= 0 ? 'A' : 'B';
+  const greener = ndviDiff >= 0 ? 'A' : 'B';
+  const districtContext = a.district === b.district
+    ? `Beide Zellen liegen in ${a.district || 'Stuttgart'}.`
+    : `Die Zellen liegen in ${a.district || 'Stuttgart'} und ${b.district || 'Stuttgart'}.`;
+  return `${districtContext} Zelle ${warmer} weist die höhere Oberflächentemperatur auf (${Math.abs(lstDiff).toFixed(1)} °C Unterschied). Zelle ${greener} besitzt den höheren NDVI-Wert und damit die stärkere Vegetationsausprägung.`;
+}
+
+function renderComparison() {
+  if (!comparisonA) return '';
+
+  if (!comparisonB) {
+    return `
+      <div class="compare-card">
+        <h3>Vergleich</h3>
+        <p>Zelle A: <strong>${comparisonA.cell_id}</strong><br><span class="compare-district">${comparisonA.district || 'Stuttgart'}</span></p>
+        <p class="muted">Wähle eine zweite Zelle und klicke auf „Als Zelle B vergleichen“.</p>
+        <button class="secondary-button" id="clearComparisonButton">Vergleich löschen</button>
+      </div>
+    `;
+  }
+
+  const q = period === 'change' ? '18' : period;
+  return `
+    <div class="compare-card">
+      <h3>Zellenvergleich</h3>
+      <div class="compare-table">
+        <div></div><strong>A</strong><strong>B</strong>
+        <span>Rasterzelle</span><span>${comparisonA.cell_id}</span><span>${comparisonB.cell_id}</span>
+        <span>Stadtbezirk</span><span class="compare-district">${comparisonA.district || 'Stuttgart'}</span><span class="compare-district">${comparisonB.district || 'Stuttgart'}</span>
+        <span>Oberfläche</span><span>${comparisonValue(comparisonA, `lst_${q}`)} °C</span><span>${comparisonValue(comparisonB, `lst_${q}`)} °C</span>
+        <span>Hitzeinsel</span><span>${comparisonValue(comparisonA, `uhi_${q}`)} °C</span><span>${comparisonValue(comparisonB, `uhi_${q}`)} °C</span>
+        <span>NDVI</span><span>${comparisonValue(comparisonA, `ndvi_${q}`, 3)}</span><span>${comparisonValue(comparisonB, `ndvi_${q}`, 3)}</span>
+        <span>Heat Score</span><span>${period === 'change' ? '–' : comparisonA[`heat_${q}`]}</span><span>${period === 'change' ? '–' : comparisonB[`heat_${q}`]}</span>
+      </div>
+      <p>${comparisonSummary(comparisonA, comparisonB)}</p>
+      <button class="secondary-button" id="clearComparisonButton">Vergleich löschen</button>
+    </div>
+  `;
+}
+
+function attachComparisonHandlers(props) {
+  const remember = document.getElementById('rememberComparisonButton');
+  const compare = document.getElementById('compareSecondButton');
+  const clear = document.getElementById('clearComparisonButton');
+
+  if (remember) {
+    remember.addEventListener('click', () => {
+      comparisonA = { ...props };
+      comparisonB = null;
+      renderInfo(props);
+    });
+  }
+
+  if (compare) {
+    compare.addEventListener('click', () => {
+      comparisonB = { ...props };
+      renderInfo(props);
+    });
+  }
+
+  if (clear) {
+    clear.addEventListener('click', () => {
+      comparisonA = null;
+      comparisonB = null;
+      renderInfo(props);
+    });
+  }
+}
+
+function renderInfo(props) {
+  lastActiveProps = props;
+  const displayPeriod = period === 'change' ? '18' : period;
+  const qualityNote = props.interpolated
+    ? '<p class="quality-note">Hinweis: Diese Zelle enthält räumlich interpolierte Werte.</p>'
+    : '';
+
+  const compareButton = !comparisonA
+    ? '<button class="compare-button" id="rememberComparisonButton">Zum Vergleich merken</button>'
+    : comparisonA.cell_id === props.cell_id
+      ? '<p class="compare-status">Diese Zelle ist als Zelle A gespeichert.</p>'
+      : '<button class="compare-button" id="compareSecondButton">Als Zelle B vergleichen</button>';
+
+  infoCard.innerHTML = `
+    <h2>Rasterzelle ${props.cell_id}</h2>
+    <p class="muted">${props.district || 'Stuttgart'} · ${activeDistrict ? '125 × 125 m' : '250 × 250 m'}</p>
+    <div class="info-grid">
+      <div class="kpi"><span>${tooltip('Heat Score', 'heat')}</span><strong>${period === 'change' ? '–' : props[`heat_${displayPeriod}`]}</strong></div>
+      <div class="kpi"><span>${tooltip('Oberfläche', 'lst')}</span><strong>${Number(props[`lst_${displayPeriod}`]).toFixed(1)} °C</strong></div>
+      <div class="kpi"><span>${tooltip('Hitzeinsel', 'uhi')}</span><strong>${Number(props[`uhi_${displayPeriod}`]).toFixed(1)} °C</strong></div>
+      <div class="kpi"><span>${tooltip('NDVI', 'ndvi')}</span><strong>${Number(props[`ndvi_${displayPeriod}`]).toFixed(3)}</strong></div>
+    </div>
+    <p>${explanation(props)}</p>
+    ${reasonsFor(props)}
+    <div class="compare-actions">${compareButton}</div>
+    ${renderComparison()}
+    ${qualityNote}
+  `;
+
+  attachComparisonHandlers(props);
+}
+
+function renderDistrictSummary(name) {
+  const summary = summaries.find(item => item.district === name);
+  if (!summary) return;
+
+  if (period === 'change') {
+    districtCard.innerHTML = `
+      <h2>${name}</h2>
+      <p><strong>Veränderung 2004–2008 → 2016–2020</strong></p>
+      <div class="district-change-grid">
+        <p>Oberflächentemperatur <strong>${summary.lst_change >= 0 ? '+' : ''}${Number(summary.lst_change).toFixed(1)} °C</strong></p>
+        <p>Stadt-Umland-Unterschied <strong>${summary.uhi_change >= 0 ? '+' : ''}${Number(summary.uhi_change).toFixed(1)} °C</strong></p>
+        <p>NDVI <strong>${summary.ndvi_change >= 0 ? '+' : ''}${Number(summary.ndvi_change).toFixed(3)}</strong></p>
+      </div>
+    `;
+    return;
+  }
+
+  const current = period === '06' ? '06' : '18';
+  districtCard.innerHTML = `
+    <h2>${name}</h2>
+    <p>
+      <strong>${Number(summary[`lst_${current}`]).toFixed(1)} °C</strong> mittlere Oberflächentemperatur ·
+      <strong>${Number(summary[`uhi_${current}`]).toFixed(1)} °C</strong> Hitzeinsel-Effekt ·
+      Heat Score <strong>${Number(summary[`heat_${current}`]).toFixed(0)}</strong>
+    </p>
+    <p class="muted">
+      Veränderung 2004–2008 → 2016–2020:
+      Oberflächentemperatur ${summary.lst_change >= 0 ? '+' : ''}${Number(summary.lst_change).toFixed(1)} °C ·
+      UHI ${summary.uhi_change >= 0 ? '+' : ''}${Number(summary.uhi_change).toFixed(1)} °C ·
+      NDVI ${summary.ndvi_change >= 0 ? '+' : ''}${Number(summary.ndvi_change).toFixed(3)}
+    </p>
+  `;
+}
+
+function clearPinnedSelection() {
+  const activeLayer = districtGridLayer || cityGridLayer;
+  if (pinnedLayer && activeLayer) activeLayer.resetStyle(pinnedLayer);
+  pinnedProps = null;
+  pinnedLayer = null;
+}
+
+function bindGrid(data) {
+  return L.geoJSON(data, {
+    style: featureStyle,
+    onEachFeature: (feature, layer) => {
+      layer.on('mouseover', () => {
+        if (!pinnedProps) {
+          layer.setStyle({ weight: 1.7, color: '#fff', fillOpacity: .92 });
+          renderInfo(feature.properties);
+        } else if (pinnedProps.cell_id !== feature.properties.cell_id) {
+          layer.setStyle({ weight: 1.15, color: '#fff', fillOpacity: .84 });
+        }
+      });
+
+      layer.on('mouseout', () => {
+        const activeLayer = districtGridLayer || cityGridLayer;
+        if (!activeLayer) return;
+
+        if (!pinnedProps) {
+          activeLayer.resetStyle(layer);
+          infoCard.innerHTML = '<p class="muted">Fahre über eine Rasterzelle oder klicke sie an.</p>';
+        } else if (pinnedProps.cell_id !== feature.properties.cell_id) {
+          activeLayer.resetStyle(layer);
+        }
+      });
+
+      layer.on('click', () => {
+        const activeLayer = districtGridLayer || cityGridLayer;
+        const sameCell = pinnedProps && pinnedProps.cell_id === feature.properties.cell_id;
+
+        if (sameCell) {
+          clearPinnedSelection();
+          infoCard.innerHTML = '<p class="muted">Auswahl gelöst. Fahre über eine Rasterzelle oder klicke sie erneut an.</p>';
+          return;
+        }
+
+        if (pinnedLayer && activeLayer) activeLayer.resetStyle(pinnedLayer);
+
+        pinnedProps = feature.properties;
+        pinnedLayer = layer;
+        layer.setStyle({
+          weight: 2.6,
+          color: '#ffffff',
+          fillOpacity: .96
+        });
+        if (layer.bringToFront) layer.bringToFront();
+        renderInfo(feature.properties);
+      });
+    }
+  });
+}
+
+function updateControls() {
+  const heatOption = layerSelect.querySelector('option[value="heat"]');
+  heatOption.disabled = period === 'change';
+
+  if (period === 'change' && layerName === 'heat') {
+    layerName = 'lst';
+    layerSelect.value = 'lst';
+  }
+
+  const activeLayer = districtGridLayer || cityGridLayer;
+  if (activeLayer) activeLayer.setStyle(featureStyle);
+
+  if (period === 'change') {
+    if (layerName === 'uhi') {
+      legendLow.textContent = 'Unterschied kleiner';
+      legendHigh.textContent = 'Unterschied größer';
+      legendGradient.style.background = 'linear-gradient(90deg,#6f6258,#b7aa9d,#f4f1ea,#e88a45,#8f2d16)';
+    } else if (layerName === 'green') {
+      legendLow.textContent = 'Vegetationsabnahme';
+      legendHigh.textContent = 'Vegetationszunahme';
+      legendGradient.style.background = 'linear-gradient(90deg,#5b0000,#b11212,#f2e8d5,#4caf50,#005a24)';
+    } else {
+      legendLow.textContent = 'Abnahme';
+      legendHigh.textContent = 'Zunahme';
+      legendGradient.style.background = 'linear-gradient(90deg,#1e5aa8,#7fb8e8,#f4f1ea,#f08a74,#a41414)';
+    }
+  } else if (layerName === 'green') {
+    legendLow.textContent = 'wenig Vegetation';
+    legendHigh.textContent = 'viel Vegetation';
+    legendGradient.style.background = 'linear-gradient(90deg,#4a0000,#a41414,#d9b44a,#39a844,#004d1f)';
+  } else {
+    legendLow.textContent = 'niedrig';
+    legendHigh.textContent = 'hoch';
+    legendGradient.style.background = 'linear-gradient(90deg,#176b54,#f0d84f,#f08a24,#e53920,#7f0000)';
+  }
+
+  if (activeDistrict) renderDistrictSummary(activeDistrict);
+}
+
+function styleDistrictBorders(selectedName = '') {
+  if (!borderLayer) return;
+  borderLayer.eachLayer(layer => {
+    const selected = layer.feature.properties.district === selectedName;
+    layer.setStyle({
+      color: basemapSelect.value === 'satellite'
+        ? (selected ? '#ffffff' : '#dddddd')
+        : (selected ? '#111111' : '#454545'),
+      weight: selected ? 3 : 1.25,
+      opacity: selected ? 1 : .55
+    });
+  });
+}
+
+async function showCity() {
+  activeDistrict = '';
+  lastActiveProps = null;
+  comparisonA = null;
+  comparisonB = null;
+  clearPinnedSelection();
+
+  if (districtGridLayer) {
+    map.removeLayer(districtGridLayer);
+    districtGridLayer = null;
+  }
+
+  if (!cityGridLayer) cityGridLayer = bindGrid(cityData).addTo(map);
+
+  resolutionNote.textContent = 'Auflösung: 250 × 250 m';
+  districtCard.innerHTML = '<p class="muted">Gesamtes Stadtgebiet.</p>';
+  infoCard.innerHTML = '<p class="muted">Fahre über eine Rasterzelle oder klicke sie an.</p>';
+  styleDistrictBorders('');
+  map.fitBounds(cityGridLayer.getBounds(), { padding: [35, 35] });
+  updateControls();
+}
+
+async function showDistrict(name) {
+  activeDistrict = name;
+  lastActiveProps = null;
+  comparisonA = null;
+  comparisonB = null;
+  clearPinnedSelection();
+  districtCard.innerHTML = `<p class="muted">Lade Detailraster für ${name} …</p>`;
+
+  const item = manifest.find(entry => entry.district === name);
+  if (!item) throw new Error(`Keine Detaildatei für ${name} gefunden.`);
+
+  const response = await fetch(item.file);
+  if (!response.ok) throw new Error(`Detailraster konnte nicht geladen werden (${response.status}).`);
+  const data = await response.json();
+
+  if (cityGridLayer) {
+    map.removeLayer(cityGridLayer);
+    cityGridLayer = null;
+  }
+  if (districtGridLayer) map.removeLayer(districtGridLayer);
+
+  districtGridLayer = bindGrid(data).addTo(map);
+  resolutionNote.textContent =
+    `Auflösung: 125 × 125 m · ${item.cells} Zellen · ${item.interpolated_cells} interpoliert`;
+
+  renderDistrictSummary(name);
+  infoCard.innerHTML = '<p class="muted">Fahre über eine Detailzelle oder klicke sie an.</p>';
+  styleDistrictBorders(name);
+  map.fitBounds(districtGridLayer.getBounds(), { padding: [70, 70] });
+  updateControls();
+}
+
+Promise.all([
+  fetch('data/stuttgart-grid-placeholder.geojson').then(r => r.json()),
+  fetch('data/stuttgart-districts.geojson').then(r => r.json()),
+  fetch('data/district-summary.json').then(r => r.json()),
+  fetch('data/district-manifest.json').then(r => r.json())
+]).then(([grid, borders, summary, districtManifest]) => {
+  cityData = grid;
+  summaries = summary;
+  manifest = districtManifest;
+
+  cityGridLayer = bindGrid(cityData).addTo(map);
+  borderLayer = L.geoJSON(borders, {
+    style: { color: '#454545', weight: 1.25, fillOpacity: 0 },
+    interactive: false
+  }).addTo(map);
+
+  map.fitBounds(cityGridLayer.getBounds(), { padding: [35, 35] });
+  updateControls();
+}).catch(error => {
+  console.error(error);
+  infoCard.innerHTML = `<p><strong>Fehler:</strong> ${error.message}</p>`;
+});
+
+periodSelect.addEventListener('change', event => {
+  period = event.target.value;
+  updateControls();
+  if (pinnedProps) renderInfo(pinnedProps);
+  else if (lastActiveProps) renderInfo(lastActiveProps);
+  else infoCard.innerHTML = '<p class="muted">Fahre über eine Rasterzelle oder klicke sie an.</p>';
+});
+
+layerSelect.addEventListener('change', event => {
+  layerName = event.target.value;
+  updateControls();
+  if (pinnedProps) renderInfo(pinnedProps);
+  else if (lastActiveProps) renderInfo(lastActiveProps);
+  else infoCard.innerHTML = '<p class="muted">Fahre über eine Rasterzelle oder klicke sie an.</p>';
+});
+
+districtSelect.addEventListener('change', async event => {
+  try {
+    if (!event.target.value) await showCity();
+    else await showDistrict(event.target.value);
+  } catch (error) {
+    console.error(error);
+    districtCard.innerHTML = `<p><strong>Fehler:</strong> ${error.message}</p>`;
+  }
+});
+
+basemapSelect.addEventListener('change', event => {
+  if (event.target.value === 'satellite') {
+    map.removeLayer(streetLayer);
+    satelliteLayer.addTo(map);
+  } else {
+    map.removeLayer(satelliteLayer);
+    streetLayer.addTo(map);
+  }
+  const activeLayer = districtGridLayer || cityGridLayer;
+  if (activeLayer) activeLayer.bringToFront().setStyle(featureStyle);
+  if (borderLayer) borderLayer.bringToFront();
+  styleDistrictBorders(activeDistrict);
+});
+
+const dialog = document.getElementById('methodDialog');
+document.getElementById('methodBtn').addEventListener('click', () => dialog.showModal());
+document.getElementById('closeMethod').addEventListener('click', () => dialog.close());
